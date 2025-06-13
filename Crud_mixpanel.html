@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cadastro de Usuário - CRUD</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Variáveis globais para o aplicativo
+        window.firebaseApp = null;
+        window.db = null;
+        window.auth = null;
+        window.currentUserId = null;
+        window.isAuthReady = false;
+        window.users = []; // Array para armazenar os usuários
+        window.editingUser = null; // Usuário atualmente em edição
+        window.formData = { // Dados do formulário
+            name: '',
+            lastName: '',
+            age: '',
+            address: '',
+            state: '',
+            maritalStatus: 'Solteiro(a)',
+            hasLicense: 'Não',
+            iphoneModel: 'iPhone 6', // Primeiro modelo da lista
+            userId: ''
+        };
+        window.message = { type: '', text: '' }; // Mensagens de feedback
+        window.showConfirmModal = false; // Estado do modal de confirmação
+        window.userToDelete = null; // Usuário a ser excluído
+
+        // Define iPhone models from iPhone 6 to current
+        window.iPhoneModels = [
+            'iPhone 6', 'iPhone 6 Plus', 'iPhone 6S', 'iPhone 6S Plus',
+            'iPhone 7', 'iPhone 7 Plus', 'iPhone 8', 'iPhone 8 Plus',
+            'iPhone X', 'iPhone XR', 'iPhone XS', 'iPhone XS Max',
+            'iPhone 11', 'iPhone 11 Pro', 'iPhone 11 Pro Max',
+            'iPhone 12 Mini', 'iPhone 12', 'iPhone 12 Pro', 'iPhone 12 Pro Max',
+            'iPhone 13 Mini', 'iPhone 13', 'iPhone 13 Pro', 'iPhone 13 Pro Max',
+            'iPhone 14', 'iPhone 14 Plus', 'iPhone 14 Pro', 'iPhone 14 Pro Max',
+            'iPhone 15', 'iPhone 15 Plus', 'iPhone 15 Pro', 'iPhone 15 Pro Max',
+        ];
+
+        // Initialize Mixpanel (replace 'a4fcef66b785c74222dc494cc55f1f6a' with your actual token)
+        window.mixpanel = {
+            init: (token) => { console.log('Mixpanel initialized with token:', token); },
+            track: (eventName, properties) => { console.log(`Mixpanel event: ${eventName}`, properties); },
+        };
+        try {
+            window.mixpanel.init('a4fcef66b785c74222dc494cc55f1f6a');
+        } catch (error) {
+            console.error("Failed to initialize Mixpanel:", error);
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // IMPORTANT: Replace with your actual Firebase config and app ID
+                const appId = 'default-app-id'; // Replace with your actual __app_id or a unique ID
+                const firebaseConfig = {
+                    // Your Firebase project configuration
+                    // Example:
+                    apiKey: "YOUR_API_KEY",
+                    authDomain: "YOUR_AUTH_DOMAIN",
+                    projectId: "YOUR_PROJECT_ID",
+                    storageBucket: "YOUR_STORAGE_BUCKET",
+                    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+                    appId: "YOUR_APP_ID"
+                };
+
+                // Use the global __app_id and __firebase_config if available (from Canvas environment)
+                const runtimeAppId = typeof __app_id !== 'undefined' ? __app_id : appId;
+                const runtimeFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig;
+
+                window.firebaseApp = initializeApp(runtimeFirebaseConfig);
+                window.db = getFirestore(window.firebaseApp);
+                window.auth = getAuth(window.firebaseApp);
+
+                onAuthStateChanged(window.auth, async (user) => {
+                    if (user) {
+                        window.currentUserId = user.uid;
+                        console.log("Firebase Auth User ID:", user.uid);
+                    } else {
+                        try {
+                            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(window.auth, initialAuthToken);
+                            } else {
+                                await signInAnonymously(window.auth);
+                            }
+                        } catch (error) {
+                            console.error("Firebase Auth Error:", error);
+                            showMessageBox('error', `Erro de autenticação: ${error.message}`);
+                        }
+                    }
+                    window.isAuthReady = true; // Authentication state is ready
+                    renderApp(); // Render after auth is ready
+                    fetchUsers(); // Fetch users after auth is ready
+                });
+            } catch (error) {
+                console.error("Firebase Initialization Error:", error);
+                showMessageBox('error', `Erro ao inicializar Firebase: ${error.message}`);
+            }
+        });
+
+        // Function to show message box
+        window.showMessageBox = (type, text) => {
+            const messageBox = document.getElementById('message-box');
+            messageBox.textContent = text;
+            messageBox.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg text-white z-50 ${type === 'success' ? 'bg-green-500' : 'bg-red-500'}`;
+            messageBox.style.display = 'block';
+            setTimeout(() => {
+                messageBox.style.display = 'none';
+                messageBox.textContent = '';
+            }, 5000);
+        };
+
+        // Function to fetch users from Firestore
+        window.fetchUsers = () => {
+            if (!window.db || !window.isAuthReady) return;
+
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const usersCollectionRef = collection(window.db, `artifacts/${appId}/public/data/users`);
+
+            onSnapshot(usersCollectionRef, (snapshot) => {
+                window.users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                console.log("Users fetched:", window.users);
+                renderUserList(); // Re-render the user list
+            }, (error) => {
+                console.error("Error fetching users:", error);
+                showMessageBox('error', `Erro ao buscar usuários: ${error.message}`);
+            });
+        };
+
+        // Function to handle form input changes
+        window.handleChange = (e) => {
+            const { name, value, type, checked } = e.target;
+            window.formData = {
+                ...window.formData,
+                [name]: type === 'radio' ? (checked ? value : window.formData[name]) : value
+            };
+            // No need to re-render form on every change, only on submit
+        };
+
+        // Function to handle form submission
+        window.handleSubmit = async (e) => {
+            e.preventDefault();
+            if (!window.db || !window.currentUserId) {
+                showMessageBox('error', 'Firebase não está pronto ou usuário não autenticado.');
+                return;
+            }
+
+            try {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const usersCollectionRef = collection(window.db, `artifacts/${appId}/public/data/users`);
+
+                if (window.editingUser) {
+                    // Update existing user
+                    const userDocRef = doc(window.db, usersCollectionRef.id, window.editingUser.id);
+                    await updateDoc(userDocRef, { ...window.formData, userId: window.currentUserId });
+                    window.mixpanel.track('User Updated', { ...window.formData, userId: window.currentUserId });
+                    showMessageBox('success', 'Usuário atualizado com sucesso!');
+                    window.editingUser = null;
+                } else {
+                    // Add new user
+                    await addDoc(usersCollectionRef, { ...window.formData, userId: window.currentUserId });
+                    window.mixpanel.track('User Created', { ...window.formData, userId: window.currentUserId });
+                    showMessageBox('success', 'Usuário criado com sucesso!');
+                }
+                // Reset form data after submission
+                window.formData = {
+                    name: '',
+                    lastName: '',
+                    age: '',
+                    address: '',
+                    state: '',
+                    maritalStatus: 'Solteiro(a)',
+                    hasLicense: 'Não',
+                    iphoneModel: window.iPhoneModels[0],
+                    userId: ''
+                };
+                renderForm(); // Re-render form to clear inputs and update button
+            } catch (error) {
+                console.error('Error adding/updating user:', error);
+                showMessageBox('error', `Erro ao salvar usuário: ${error.message}`);
+            }
+        };
+
+        // Function to set user for editing
+        window.handleEdit = (user) => {
+            window.editingUser = user;
+            window.formData = { ...user }; // Populate form with user data
+            renderForm(); // Re-render form to show editing state
+        };
+
+        // Function to prepare for user deletion (show confirmation modal)
+        window.handleDeleteClick = (user) => {
+            window.userToDelete = user;
+            window.showConfirmModal = true;
+            renderConfirmModal();
+        };
+
+        // Function to confirm deletion and proceed
+        window.confirmDelete = async () => {
+            if (!window.db || !window.currentUserId || !window.userToDelete) {
+                showMessageBox('error', 'Firebase não está pronto ou usuário não autenticado ou nenhum usuário para excluir.');
+                return;
+            }
+
+            try {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const usersCollectionRef = collection(window.db, `artifacts/${appId}/public/data/users`);
+                const userDocRef = doc(window.db, usersCollectionRef.id, window.userToDelete.id);
+                await deleteDoc(userDocRef);
+                window.mixpanel.track('User Deleted', { userId: window.currentUserId, deletedUserId: window.userToDelete.id });
+                showMessageBox('success', 'Usuário excluído com sucesso!');
+            } catch (error) {
+                console.error('Error deleting user:', error);
+                showMessageBox('error', `Erro ao excluir usuário: ${error.message}`);
+            } finally {
+                window.showConfirmModal = false;
+                window.userToDelete = null;
+                renderConfirmModal(); // Hide modal
+            }
+        };
+
+        // Function to cancel deletion
+        window.cancelDelete = () => {
+            window.showConfirmModal = false;
+            window.userToDelete = null;
+            renderConfirmModal(); // Hide modal
+        };
+
+        // Function to cancel editing
+        window.handleCancelEdit = () => {
+            window.editingUser = null;
+            window.formData = {
+                name: '',
+                lastName: '',
+                age: '',
+                address: '',
+                state: '',
+                maritalStatus: 'Solteiro(a)',
+                hasLicense: 'Não',
+                iphoneModel: window.iPhoneModels[0],
+                userId: ''
+            };
+            renderForm(); // Re-render form to clear inputs
+        };
+
+        // Function to render the entire app (or parts that need re-rendering)
+        window.renderApp = () => {
+            const userIdDisplay = document.getElementById('current-user-id');
+            if (userIdDisplay) {
+                if (window.currentUserId) {
+                    userIdDisplay.innerHTML = `<p>Seu ID de Usuário (para fins de persistência e colaboração):</p><p class="font-semibold text-purple-700 break-words">${window.currentUserId}</p>`;
+                } else {
+                    userIdDisplay.innerHTML = '';
+                }
+            }
+            renderForm();
+            renderUserList();
+            renderConfirmModal();
+        };
+
+        // Function to render the form
+        window.renderForm = () => {
+            const formElement = document.getElementById('user-form');
+            if (!formElement) return; // Ensure element exists
+
+            const isEditing = !!window.editingUser;
+            document.getElementById('form-title').textContent = isEditing ? 'Editar Usuário' : 'Novo Usuário';
+            document.getElementById('submit-button').textContent = isEditing ? 'Salvar Edição' : 'Cadastrar';
+
+            // Populate form fields
+            document.getElementById('name').value = window.formData.name;
+            document.getElementById('lastName').value = window.formData.lastName;
+            document.getElementById('age').value = window.formData.age;
+            document.getElementById('address').value = window.formData.address;
+            document.getElementById('state').value = window.formData.state;
+            document.getElementById('maritalStatus').value = window.formData.maritalStatus;
+
+            // Radio buttons for hasLicense
+            document.querySelector(`input[name="hasLicense"][value="${window.formData.hasLicense}"]`).checked = true;
+
+            // Dropdown for iphoneModel
+            document.getElementById('iphoneModel').value = window.formData.iphoneModel;
+
+            const cancelButtonContainer = document.getElementById('cancel-button-container');
+            if (isEditing) {
+                cancelButtonContainer.innerHTML = `
+                    <button
+                        type="button"
+                        onclick="handleCancelEdit()"
+                        class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-gray-700 bg-gray-200 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out"
+                    >
+                        Cancelar Edição
+                    </button>
+                `;
+            } else {
+                cancelButtonContainer.innerHTML = '';
+            }
+        };
+
+        // Function to render the user list
+        window.renderUserList = () => {
+            const userListBody = document.getElementById('user-list-body');
+            const noUsersMessage = document.getElementById('no-users-message');
+
+            if (!userListBody || !noUsersMessage) return;
+
+            if (window.users.length === 0) {
+                noUsersMessage.style.display = 'block';
+                userListBody.innerHTML = ''; // Clear table
+                userListBody.closest('.overflow-x-auto').style.display = 'none'; // Hide table container
+            } else {
+                noUsersMessage.style.display = 'none';
+                userListBody.closest('.overflow-x-auto').style.display = 'block'; // Show table container
+                userListBody.innerHTML = window.users.map(user => `
+                    <tr key="${user.id}" class="hover:bg-gray-50 transition-colors duration-150">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${user.name}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${user.lastName}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${user.age}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${user.state}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${user.hasLicense}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${user.iphoneModel}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <button
+                                onclick="handleEdit(JSON.parse(decodeURIComponent('${encodeURIComponent(JSON.stringify(user))}')))"
+                                class="text-indigo-600 hover:text-indigo-900 mr-4 transition duration-150 ease-in-out"
+                            >
+                                Editar
+                            </button>
+                            <button
+                                onclick="handleDeleteClick(JSON.parse(decodeURIComponent('${encodeURIComponent(JSON.stringify(user))}')))"
+                                class="text-red-600 hover:text-red-900 transition duration-150 ease-in-out"
+                            >
+                                Excluir
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        };
+
+        // Function to render the confirmation modal
+        window.renderConfirmModal = () => {
+            const modal = document.getElementById('confirmation-modal');
+            const userNameSpan = document.getElementById('modal-user-name');
+            if (!modal || !userNameSpan) return;
+
+            if (window.showConfirmModal && window.userToDelete) {
+                userNameSpan.textContent = `${window.userToDelete.name} ${window.userToDelete.lastName}`;
+                modal.style.display = 'flex'; // Show modal
+            } else {
+                modal.style.display = 'none'; // Hide modal
+            }
+        };
+    </script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-purple-100 to-indigo-200 flex flex-col items-center p-4 font-inter text-gray-800">
+
+    <!-- Message Box -->
+    <div id="message-box" style="display: none;" class="fixed top-4 right-4 p-4 rounded-lg shadow-lg text-white z-50"></div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmation-modal" style="display: none;" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-xl max-w-sm w-full">
+            <h3 class="text-xl font-semibold mb-4 text-gray-800">Confirmar Exclusão</h3>
+            <p class="mb-6 text-gray-700">Tem certeza de que deseja excluir o usuário <span id="modal-user-name" class="font-bold"></span>?</p>
+            <div class="flex justify-end space-x-4">
+                <button
+                    onclick="cancelDelete()"
+                    class="px-6 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 transition duration-150 ease-in-out"
+                >
+                    Cancelar
+                </button>
+                <button
+                    onclick="confirmDelete()"
+                    class="px-6 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 transition duration-150 ease-in-out"
+                >
+                    Excluir
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <h1 class="text-4xl font-bold mb-8 text-indigo-800 drop-shadow-md">
+        Cadastro de Usuário
+    </h1>
+
+    <div id="current-user-id" class="mb-6 text-center text-sm text-gray-600">
+        <!-- User ID will be rendered here -->
+    </div>
+
+    <!-- User Form -->
+    <div class="w-full max-w-2xl bg-white p-8 rounded-xl shadow-lg mb-8">
+        <h2 id="form-title" class="text-2xl font-semibold mb-6 text-indigo-700">Novo Usuário</h2>
+        <form id="user-form" onsubmit="handleSubmit(event)" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Nome -->
+            <div>
+                <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                <input
+                  type="text"
+                  id="name"
+                  name="name"
+                  oninput="handleChange(event)"
+                  required
+                  class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                />
+            </div>
+            <!-- Sobrenome -->
+            <div>
+                <label for="lastName" class="block text-sm font-medium text-gray-700 mb-1">Sobrenome</label>
+                <input
+                  type="text"
+                  id="lastName"
+                  name="lastName"
+                  oninput="handleChange(event)"
+                  required
+                  class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                />
+            </div>
+            <!-- Idade -->
+            <div>
+                <label for="age" class="block text-sm font-medium text-gray-700 mb-1">Idade</label>
+                <input
+                  type="number"
+                  id="age"
+                  name="age"
+                  oninput="handleChange(event)"
+                  required
+                  min="0"
+                  class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                />
+            </div>
+            <!-- Endereço -->
+            <div>
+                <label for="address" class="block text-sm font-medium text-gray-700 mb-1">Endereço</label>
+                <input
+                  type="text"
+                  id="address"
+                  name="address"
+                  oninput="handleChange(event)"
+                  required
+                  class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                />
+            </div>
+            <!-- Estado -->
+            <div>
+                <label for="state" class="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                <input
+                  type="text"
+                  id="state"
+                  name="state"
+                  oninput="handleChange(event)"
+                  required
+                  class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                />
+            </div>
+            <!-- Estado Civil -->
+            <div>
+                <label for="maritalStatus" class="block text-sm font-medium text-gray-700 mb-1">Estado Civil</label>
+                <select
+                  id="maritalStatus"
+                  name="maritalStatus"
+                  onchange="handleChange(event)"
+                  required
+                  class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+                  <option value="Solteiro(a)">Solteiro(a)</option>
+                  <option value="Casado(a)">Casado(a)</option>
+                  <option value="Divorciado(a)">Divorciado(a)</option>
+                  <option value="Viúvo(a)">Viúvo(a)</option>
+                </select>
+            </div>
+            <!-- Possui Habilitação -->
+            <div class="col-span-1 md:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Possui Habilitação?</label>
+                <div class="mt-1 flex items-center space-x-4">
+                  <label class="inline-flex items-center">
+                    <input
+                      type="radio"
+                      name="hasLicense"
+                      value="Sim"
+                      onchange="handleChange(event)"
+                      class="form-radio text-indigo-600"
+                    />
+                    <span class="ml-2 text-gray-700">Sim</span>
+                  </label>
+                  <label class="inline-flex items-center">
+                    <input
+                      type="radio"
+                      name="hasLicense"
+                      value="Não"
+                      onchange="handleChange(event)"
+                      class="form-radio text-indigo-600"
+                    />
+                    <span class="ml-2 text-gray-700">Não</span>
+                  </label>
+                </div>
+            </div>
+            <!-- Qual o iPhone -->
+            <div class="col-span-1 md:col-span-2">
+                <label for="iphoneModel" class="block text-sm font-medium text-gray-700 mb-1">Qual o iPhone?</label>
+                <select
+                  id="iphoneModel"
+                  name="iphoneModel"
+                  onchange="handleChange(event)"
+                  required
+                  class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+                  <!-- Options will be populated by JavaScript -->
+                </select>
+            </div>
+
+            <!-- Buttons -->
+            <div class="col-span-1 md:col-span-2 flex justify-end space-x-4 mt-4">
+                <div id="cancel-button-container">
+                    <!-- Cancel button will be rendered here when editing -->
+                </div>
+                <button
+                  type="submit"
+                  id="submit-button"
+                  class="inline-flex justify-center py-2 px-6 border border-transparent shadow-sm text-lg font-semibold rounded-full text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out transform hover:scale-105"
+                >
+                  Cadastrar
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- User List -->
+    <div class="w-full max-w-4xl bg-white p-8 rounded-xl shadow-lg">
+        <h2 class="text-2xl font-semibold mb-6 text-indigo-700">Usuários Cadastrados</h2>
+        <p id="no-users-message" class="text-center text-gray-500">Nenhum usuário cadastrado ainda.</p>
+        <div class="overflow-x-auto rounded-lg border border-gray-200 shadow-sm" style="display: none;">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sobrenome</th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Idade</th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Habilitação</th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">iPhone</th>
+                  <th scope="col" class="relative px-6 py-3">
+                    <span class="sr-only">Ações</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="user-list-body" class="bg-white divide-y divide-gray-200">
+                <!-- User rows will be rendered here -->
+              </tbody>
+            </table>
+          </div>
+    </div>
+
+    <script type="module">
+        // Popula as opções do iPhone na inicialização
+        window.populateIphoneModels = () => {
+            const selectElement = document.getElementById('iphoneModel');
+            if (selectElement) {
+                selectElement.innerHTML = window.iPhoneModels.map(model => `<option value="${model}">${model}</option>`).join('');
+                selectElement.value = window.formData.iphoneModel; // Define o valor inicial
+            }
+        };
+
+        // Renderiza tudo na carga inicial
+        window.onload = () => {
+            window.populateIphoneModels();
+            window.renderApp();
+        };
+
+        // Certifique-se de que o estado inicial dos rádios 'hasLicense' seja aplicado
+        window.applyInitialRadioState = () => {
+            const hasLicenseSim = document.querySelector('input[name="hasLicense"][value="Sim"]');
+            const hasLicenseNao = document.querySelector('input[name="hasLicense"][value="Não"]');
+
+            if (hasLicenseSim && hasLicenseNao) {
+                if (window.formData.hasLicense === 'Sim') {
+                    hasLicenseSim.checked = true;
+                } else {
+                    hasLicenseNao.checked = true;
+                }
+            }
+        };
+
+        // Chama a função para aplicar o estado inicial dos rádios após a renderização do formulário
+        document.addEventListener('DOMContentLoaded', () => {
+            // Adiciona um listener para quando o formulário é renderizado (inicialmente e após edição)
+            const observer = new MutationObserver(() => {
+                window.applyInitialRadioState();
+            });
+            observer.observe(document.getElementById('user-form'), { childList: true, subtree: true, attributes: true });
+            window.applyInitialRadioState(); // Chama uma vez para o carregamento inicial
+        });
+    </script>
+</body>
+</html>
