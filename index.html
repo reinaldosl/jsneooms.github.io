@@ -16,8 +16,9 @@
         (function(f,b){if(!b.__SV){var e,g,i,h;window.mixpanel=b;b._i=[];b.init=function(a,c,d){function f(b,h){var a=h.split(".");2==a.length&&(b=b[a[0]],h=a[1]);b[h]=function(){b.push([h].concat(Array.prototype.slice.call(arguments,0)))}};var k=f(b,"track show setup get set register unregister alias identify name_tag set_config reset opt_in_tracking opt_out_tracking has_opted_in_tracking has_opted_out_tracking clear_opt_in_out_tracking start_batch_senders people.set people.set_once people.unset people.increment people.append people.union people.track_charge people.clear_charges people.delete_user people.remove people.callback_with_proxy group.set group.set_once group.unset group.remove group.union group.get_group group.track_event group.init_group group.add_group group.remove_group group.on_group_set".split(" "));for(g=0;g<k.length;g++)i=k[g],f(d||a,i);b._i.push([a,c,d])};b.__SV=1.2;e=f(b,"config enable all disable all track_pageview register_once".split(" "));for(g=0;g<e.length;g++)i=e[g],f(i);b.alias=function(a,c){b.push([f,"alias",a,c])};b.super=function(a,c){b.push([f,"super",a,c])};b.track_links=function(a,c){b.push([f,"track_links",a,c])};b.track_forms=function(a,c){b.push([f,"track_forms",a,c])};b.cookie=f(b,"cookie enable cookie disable cookie get cookie set cookie remove".split(" "));h=["disable","enable","setup","track","track_links","track_forms","register","register_once","unregister","identify","alias","name_tag","set_config","people.set","people.set_once","people.increment","people.append","people.union","people.track_charge","people.clear_charges","people.delete_user"];for(g=0;g<h.length;g++)f(b,h[g]);f(b,"__SV");a=document.createElement("script");a.type="text/javascript";a.async=!0;a.src=("https:"===document.location.protocol?"https:":"http:")+
             '//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js';var n=document.getElementsByTagName("script")[0];n.parentNode.insertBefore(a,n)}})(document,window.mixpanel||[]);
         
-        // Inicializa o Mixpanel com o token fornecido e modo debug
-        mixpanel.init("a4fcef66b785c74222dc494cc55f1f6a", {debug: true}); 
+
+        mixpanel.init('a4fcef66b785c74222dc494cc55f1f6a', {
+        autocapture: true,});
     </script>
     <!-- Fim do Snippet Mixpanel -->
 
