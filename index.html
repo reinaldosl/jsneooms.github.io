@@ -12,9 +12,12 @@
     <!-- Mixpanel JS Snippet -->
     <script type="text/javascript">
         // Mixpanel JavaScript SDK v2.43.0
+        // Este snippet é fornecido pelo Mixpanel para inicialização e autocapture
         (function(f,b){if(!b.__SV){var e,g,i,h;window.mixpanel=b;b._i=[];b.init=function(a,c,d){function f(b,h){var a=h.split(".");2==a.length&&(b=b[a[0]],h=a[1]);b[h]=function(){b.push([h].concat(Array.prototype.slice.call(arguments,0)))}};var k=f(b,"track show setup get set register unregister alias identify name_tag set_config reset opt_in_tracking opt_out_tracking has_opted_in_tracking has_opted_out_tracking clear_opt_in_out_tracking start_batch_senders people.set people.set_once people.unset people.increment people.append people.union people.track_charge people.clear_charges people.delete_user people.remove people.callback_with_proxy group.set group.set_once group.unset group.remove group.union group.get_group group.track_event group.init_group group.add_group group.remove_group group.on_group_set".split(" "));for(g=0;g<k.length;g++)i=k[g],f(d||a,i);b._i.push([a,c,d])};b.__SV=1.2;e=f(b,"config enable all disable all track_pageview register_once".split(" "));for(g=0;g<e.length;g++)i=e[g],f(i);b.alias=function(a,c){b.push([f,"alias",a,c])};b.super=function(a,c){b.push([f,"super",a,c])};b.track_links=function(a,c){b.push([f,"track_links",a,c])};b.track_forms=function(a,c){b.push([f,"track_forms",a,c])};b.cookie=f(b,"cookie enable cookie disable cookie get cookie set cookie remove".split(" "));h=["disable","enable","setup","track","track_links","track_forms","register","register_once","unregister","identify","alias","name_tag","set_config","people.set","people.set_once","people.increment","people.append","people.union","people.track_charge","people.clear_charges","people.delete_user"];for(g=0;g<h.length;g++)f(b,h[g]);f(b,"__SV");a=document.createElement("script");a.type="text/javascript";a.async=!0;a.src=("https:"===document.location.protocol?"https:":"http:")+
             '//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js';var n=document.getElementsByTagName("script")[0];n.parentNode.insertBefore(a,n)}})(document,window.mixpanel||[]);
-            mixpanel.init("a4fcef66b785c74222dc494cc55f1f6a", {debug: true}); // Inicializa Mixpanel com o token fornecido e modo debug
+        
+        // Inicializa o Mixpanel com o token fornecido e modo debug
+        mixpanel.init("a4fcef66b785c74222dc494cc55f1f6a", {debug: true}); 
     </script>
     <!-- Fim do Snippet Mixpanel -->
 
@@ -49,10 +52,6 @@
     <h1 class="text-4xl font-bold mb-8 text-indigo-800 drop-shadow-md">
         Cadastro de Usuário Estático
     </h1>
-
-    <div id="current-user-id" class="mb-6 text-center text-sm text-gray-600">
-        <!-- O display do User ID é removido, pois o Firebase não é mais usado para autenticação -->
-    </div>
 
     <!-- User Form -->
     <div class="w-full max-w-2xl bg-white p-8 rounded-xl shadow-lg mb-8">
@@ -219,7 +218,8 @@
 
     <script>
         // Variáveis globais para o aplicativo
-        let users = []; // Array para armazenar os usuários
+        // Carrega usuários do localStorage ou inicializa um array vazio
+        let users = JSON.parse(localStorage.getItem('users')) || []; 
         let editingUser = null; // Usuário atualmente em edição
         let formData = { // Dados do formulário
             name: '',
@@ -246,6 +246,11 @@
             'iPhone 14', 'iPhone 14 Plus', 'iPhone 14 Pro', 'iPhone 14 Pro Max',
             'iPhone 15', 'iPhone 15 Plus', 'iPhone 15 Pro', 'iPhone 15 Pro Max',
         ];
+
+        // Salva os usuários no localStorage
+        const saveUsersToLocalStorage = () => {
+            localStorage.setItem('users', JSON.stringify(users));
+        };
 
         // Function to show message box
         const showMessageBox = (type, text) => {
@@ -280,16 +285,25 @@
                 users = users.map(user => 
                     user.id === editingUser.id ? { ...formData, id: newUserId } : user
                 );
-                showMessageBox('success', 'Usuário atualizado com sucesso (estático)!');
-                mixpanel.track('User Updated', { ...formData, id: newUserId }); // Rastreia o evento de atualização
+                showMessageBox('success', 'Usuário atualizado com sucesso!');
+                // Rastreia o evento de edição no Mixpanel
+                if (window.mixpanel) {
+                    mixpanel.track('Edição de Usuário', { ...formData, id: newUserId }); 
+                }
                 editingUser = null;
             } else {
                 // Adiciona novo usuário à lista local
                 users.push({ ...formData, id: newUserId });
-                showMessageBox('success', 'Usuário criado com sucesso (estático)!');
-                mixpanel.track('User Created', { ...formData, id: newUserId }); // Rastreia o evento de criação
+                showMessageBox('success', 'Usuário criado com sucesso!');
+                // Rastreia o evento de cadastro no Mixpanel
+                if (window.mixpanel) {
+                    mixpanel.track('Cadastro de Usuário', { ...formData, id: newUserId }); 
+                }
             }
             
+            // Salva no localStorage
+            saveUsersToLocalStorage();
+
             // Reseta os dados do formulário
             formData = {
                 name: '',
@@ -326,11 +340,18 @@
                 return;
             }
 
+            // Rastreia o evento de exclusão no Mixpanel
+            if (window.mixpanel) {
+                mixpanel.track('Exclusão de Usuário', { id: userToDelete.id, name: userToDelete.name, lastName: userToDelete.lastName }); 
+            }
+
             // Remove o usuário da lista local
             users = users.filter(user => user.id !== userToDelete.id);
-            showMessageBox('success', 'Usuário excluído com sucesso (estático)!');
-            mixpanel.track('User Deleted', { id: userToDelete.id, name: userToDelete.name, lastName: userToDelete.lastName }); // Rastreia o evento de exclusão
+            showMessageBox('success', 'Usuário excluído com sucesso!');
             
+            // Salva no localStorage
+            saveUsersToLocalStorage();
+
             showConfirmModal = false;
             userToDelete = null;
             renderConfirmModal(); // Esconde o modal
@@ -385,10 +406,16 @@
             document.getElementById('maritalStatus').value = formData.maritalStatus;
 
             // Botões de rádio para hasLicense
-            document.querySelector(`input[name="hasLicense"][value="${formData.hasLicense}"]`).checked = true;
+            // Garante que o rádio correto é marcado
+            document.querySelector(`input[name="hasLicense"][value="Sim"]`).checked = (formData.hasLicense === 'Sim');
+            document.querySelector(`input[name="hasLicense"][value="Não"]`).checked = (formData.hasLicense === 'Não');
 
             // Dropdown para iphoneModel
-            document.getElementById('iphoneModel').value = formData.iphoneModel;
+            const iphoneSelect = document.getElementById('iphoneModel');
+            if (iphoneSelect) {
+                iphoneSelect.value = formData.iphoneModel;
+            }
+            
 
             const cancelButtonContainer = document.getElementById('cancel-button-container');
             if (isEditing) {
@@ -477,27 +504,17 @@
         };
 
         // Certifique-se de que o estado inicial dos rádios 'hasLicense' seja aplicado
-        const applyInitialRadioState = () => {
-            const hasLicenseSim = document.querySelector('input[name="hasLicense"][value="Sim"]');
-            const hasLicenseNao = document.querySelector('input[name="hasLicense"][value="Não"]');
-
-            if (hasLicenseSim && hasLicenseNao) {
-                if (formData.hasLicense === 'Sim') {
-                    hasLicenseSim.checked = true;
-                } else {
-                    hasLicenseNao.checked = true;
-                }
-            }
-        };
-
-        // Chama a função para aplicar o estado inicial dos rádios após a renderização do formulário
+        // Este observador garante que o estado do rádio é aplicado mesmo após re-renderizações do formulário
         document.addEventListener('DOMContentLoaded', () => {
-            // Adiciona um listener para quando o formulário é renderizado (inicialmente e após edição)
-            const observer = new MutationObserver(() => {
-                applyInitialRadioState();
-            });
-            observer.observe(document.getElementById('user-form'), { childList: true, subtree: true, attributes: true });
-            applyInitialRadioState(); // Chama uma vez para o carregamento inicial
+            const formElement = document.getElementById('user-form');
+            if (formElement) {
+                const observer = new MutationObserver(() => {
+                    // Garante que os valores dos campos de rádio sejam atualizados após a renderização do formulário
+                    document.querySelector(`input[name="hasLicense"][value="Sim"]`).checked = (formData.hasLicense === 'Sim');
+                    document.querySelector(`input[name="hasLicense"][value="Não"]`).checked = (formData.hasLicense === 'Não');
+                });
+                observer.observe(formElement, { childList: true, subtree: true, attributes: true });
+            }
         });
     </script>
 </body>
